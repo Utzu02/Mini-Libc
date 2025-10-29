@@ -10,28 +10,38 @@
 void *malloc(size_t size)
 {
 	/* TODO: Implement malloc(). */
-	return NULL;
+	size_t *addr = mmap(0, size + sizeof(size_t), PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+	*addr = size + sizeof(size_t);
+	return (void *)(addr + 1);
 }
 
 void *calloc(size_t nmemb, size_t size)
 {
+	void *addr = malloc(nmemb * size);
+	memset(addr, 0, nmemb * size);
+	return addr;
 	/* TODO: Implement calloc(). */
-	return NULL;
 }
 
 void free(void *ptr)
 {
+	size_t *addr = (size_t *)ptr - 1;
+	size_t len = *addr;
+	munmap(addr, len);
 	/* TODO: Implement free(). */
 }
 
 void *realloc(void *ptr, size_t size)
 {
 	/* TODO: Implement realloc(). */
-	return NULL;
+	size_t *adr = (size_t *)ptr - 1;
+	void *p = malloc(size);
+	memcpy(p, ptr, *adr);
+	return p;
 }
 
 void *reallocarray(void *ptr, size_t nmemb, size_t size)
 {
 	/* TODO: Implement reallocarray(). */
-	return NULL;
+	return realloc(ptr, nmemb * size);
 }

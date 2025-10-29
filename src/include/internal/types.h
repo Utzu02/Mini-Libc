@@ -22,6 +22,7 @@ typedef unsigned int uint32_t;
 typedef unsigned long uint64_t;
 typedef int int32_t;
 typedef long int64_t;
+typedef long time_t;
 
 #define NULL	((void *) 0)
 
