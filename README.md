@@ -1,321 +1,78 @@
-# Mini-libc
+# Mini-libc Snapshot
 
-## Objectives
+This repository contains a self-contained, syscall-only C standard library subset that can replace glibc for simple workloads on Linux/x86_64. The focus is on features I actually implemented: string manipulation, memory allocation based on `mmap`, low-level file I/O, and basic sleep helpers. Everything is built as a static archive (`libc.a`) that applications can link against.
 
-- Learn about the structure and functionalities provided by the standard C library
-- Accommodate with the syscall interface in Linux
-- Gain a better understanding of strings and memory management functions
-- Learn how the standard C library provides support for low-level input/output operations
+## Highlights
 
-## Statement
+- **String & memory suite** – `strcpy`, `strcat`, `strlen`, `strncpy`, `strncat`, `strcmp`, `strncmp`, `strstr`, `strrstr`, `memcpy`, `memset`, `memmove`, and `memcmp` are implemented manually in `src/string/string.c`.
+- **Memory allocator** – `malloc`, `calloc`, `realloc`, `reallocarray`, `free`, plus the raw `mmap`, `mremap`, `munmap` wrappers, live under `src/mm`. Allocations grab anonymous pages via `mmap`, stash the block size in a header word, and unmap on `free`.
+- **I/O syscalls** – `open`, `close`, `lseek`, `truncate`, `ftruncate`, `stat`, `fstat`, `fstatat`, and `puts` wrap the corresponding Linux syscalls, translate negative returns into `errno`, and never depend on glibc.
+- **Sleep helpers** – `nanosleep` is a thin syscall wrapper; `sleep` builds a `timespec`, calls `nanosleep`, and returns the remaining seconds if interrupted. A lightweight `time.h` header and `time_t` typedef back these APIs.
+- **Build glue** – `src/Makefile` archives all sources (including the new `io/puts.c` and `process/*.c`) into `libc.a`, so `make` inside `src/` is enough to produce the library.
 
-Build a **minimalistic** [**standard C library**](https://en.wikipedia.org/wiki/C_standard_library) implementation for Linux systems (named **mini-libc**), that can be used as a replacement for the **system libc** ([glibc](https://www.gnu.org/software/libc/) in Linux).
-The goal is to have a minimally functional libc with features such as string management, basic memory support and POSIX file I/O.
+## Architecture At A Glance
 
-The implementation of mini-libc will be **freestanding**, i.e. it will not use any outside library calls.
-It will be implemented on top of the system call interface provided by Linux on an `x86_64` architecture.
-Any function you require, that is typically part of libc, you will have to implement.
-You can reuse functions that you implement in other parts of the mini-libc.
+| Area | Files | Notes |
+| --- | --- | --- |
+| String helpers | `src/string/string.c` | Pointer-based loops only; no external dependencies. |
+| Syscall layer | `src/internal/arch/x86_64/syscall_arch.h`, `src/syscall.c` | Shared helper used by every wrapper. |
+| Memory allocation | `src/mm/malloc.c`, `src/mm/mmap.c`, `include/internal/mm/mem_list.h` | Simple header-before-payload layout; no free list yet. |
+| Low-level I/O | `src/io/*.c`, `src/stat/*.c` | Names and signatures mirror the POSIX headers in `src/include`. |
+| Process utilities | `src/process/nanosleep.c`, `src/process/sleep.c` | Provide blocking sleeps without signals helpers. |
 
-In case you are using a macOS device with ARM64 / Aarch64, you will have to install an `x86_64` virtual machine.
+## Building
 
-## Support Code
-
-The support code consists of three directories:
-
-- `src/` is the skeleton mini-libc implementation.
-  You will have to implement missing parts marked as `TODO` items.
-
-- `samples/` stores use cases and tests of mini-libc.
-
-- `tests/` are tests used to validate (and grade) the assignment.
-
-System call invocation is done via the `syscall()` function defined in `src/syscall.c`.
-That itself makes a call to the architecture-specific call in `src/internal/arch/x86_64/syscall_arch.h`;
-hence the dependency on the `x86_64` architecture.
-
-### API and Implementation Tasks
-
-The application programming interface (API) of the C standard library is declared in a number of header files.
-Each header file contains one or more function declarations, data type definitions and macros.
-For your minimal implementation, the following header files are of interest:
-
-- `<string.h>`: defines string-handling functions
-
-  For this assignment, you will have to implement the following functions: `strcpy()`, `strcat()`, `strlen()`, `strncpy()`, `strncat()`, `strcmp()`, `strncmp()`, `strstr()`, `strrstr()`, `memcpy()`, `memset()`, `memmove()`, `memcmp()`.
-
-- `<stdio.h>`: defines printing and I/O functions
-
-  For this assignment, you will have to implement `puts()`.
-
-- `<unistd.h>`, `<sys/fcntl.h>` and `<sys/stat.h>`: define I/O primitives
-
-  For this assignment, you will have to implement the following functions: `open()`, `close()`, `lseek()`, `stat()`, `fstat()`, `truncate()`, `ftruncate()`.
-
-  You will also have to implement the `nanosleep()` and `sleep()` functions.
-
-- `<stdlib.h`> and `<sys/mman.h>` define memory allocation functions
-
-  For this assignment, you will have to implement the following functions: `malloc()`, `free()`, `calloc()`, `realloc()`, `realloc_array()`, `mmap()`, `mremap()`, `munmap()`.
-
-  For managing memory areas, a basic list structure is provided in `include/internal/mm/mem_list.h` and `mm/mem_list.c`.
-
-- `<errno.h>` and `errno.c`: declare and define the integer variable `errno`, which is set by system calls and some library functions in the event of an error to indicate what went wrong.
-
-Some tests do not build.
-This is intentional.
-You will have to add the missing features to make those tests compile, that is
-
-- the `time.h` header
-- the declaration and the implementation of `puts()`
-- the declaration and the implementation of `nanosleep()` and `sleep()`
-- the update of the libc `Makefile` to build the source code files implementing `puts()`, `nanosleep()` and `sleep()`
-
-  :exclamation::exclamation: **Pay attention** to which functions have to modify the `errno` variable.
-
-### Building mini-libc
-
-To build mini-libc, run `make` in the `src/` directory:
-
-```console
-student@so:~/.../content/assignments/mini-libc$ cd src/
-
-student@so:~/.../assignments/mini-libc/src$ make
+```sh
+cd src
+make
 ```
 
-To build samples, enter the `samples` directory and run `make`:
+This produces `libc.a`. You can link it by passing `-Lsrc -l:libc.a` (or copying the archive alongside your program and linking with `-lmini` etc.).
 
-```console
-student@so:~/.../content/assignments/mini-libc$ cd samples/
+## Testing
 
-student@so:~/.../assignments/mini-libc/samples$ make
+```sh
+cd tests
+make check      # run the mini test-suite
+./run_all_tests.sh
 ```
 
-## Testing and Grading
+Scripts invoke the compiled objects directly, so make sure `src/libc.a` exists before running them. The tests exercise every function mentioned in the Highlights section (string, I/O, memory, mmap, sleep).
 
-The testing is automated.
-Tests are located in the `tests/` directory.
+For grading we rely on the upstream Docker checker image (`checker/` directory). Running `docker-compose run checker` (or `./checker/checker-docker.sh` if provided by your environment) is the recommended path because it bundles all required linters and toolchain versions, avoiding host-specific issues.
 
-```console
-student@so:~/.../assignments/mini-libc/tests$ ls -F
-Makefile       graded_test.inc.sh  run_all_tests.sh*   test_io_file_create.sh*  test_malloc_free.sh*           test_memory.c            test_mmap_perm_notok.sh*       test_nanosleep.sh*   test_stat.sh*
-grade.sh*      io/                 test_fstat.sh*      test_io_file_delete.sh*  test_malloc_free_sequence.sh*  test_mmap.sh*            test_mmap_perm_ok.sh*          test_open_close.sh*  test_string.c
-graded_test.c  memory/             test_ftruncate.sh*  test_lseek.sh*           test_malloc_perm_notok.sh*     test_mmap_munmap.sh*     test_multiple_malloc.sh*       test_puts.sh*        test_truncate.sh*
-graded_test.h  process/            test_io.c           test_malloc.sh*          test_malloc_perm_ok.sh*        test_mmap_perm_none.sh*  test_multiple_malloc_free.sh*  test_sleep.sh*
-```
+### Docker Checker (full workflow)
 
-To test and grade your assignment solution, enter the `tests/` directory and run `grade.sh`.
-Note that this requires linters being available.
-The easiest is to use a Docker-based setup with everything installed.
-When using `grade.sh` you will get grades for checking correctness (maximum `90` points) and for coding style (maxim `10` points).
-A successful run will provide you an output ending with:
+This is the official way to grade: it uses the provided Docker container for a stable toolchain and an isolated environment that matches the CI runners. Follow the same steps the initial README recommended:
 
-```console
-### GRADE
+1. Ensure Docker is installed on your machine (see https://docs.docker.com/engine/install/).
+2. Use the helper script from the repo root to build the image:
 
+   ```console
+   ./local.sh docker build
+   ```
 
-Checker:                                                         90/ 90
-Style:                                                           10/ 10
-Total:                                                          100/100
+   The script tags the image as `gitlab.cs.pub.ro:5050/operating-systems/assignment-mini-libc:latest`, matching the remote runner.
 
+3. Launch the checker inside the container:
 
-### STYLE SUMMARY
+   ```console
+   ./local.sh checker
+   ```
 
+   This runs `checker/checker.sh`, which first compiles/tests everything under `tests/`, then executes the linters (`checkpatch`, `cpplint`, `shellcheck`) using the configs shipped in the repo.
 
-```
+4. (Optional) Push to your fork to trigger the exact same pipeline remotely. GitLab CI runs the checker inside the same image, so the local results and CI results stay in sync.
 
-### Running the Checker
+If you need the long-form version (including Moodle submission details), see `README.checker.md` or the VMChecker Student Handbook linked there.
 
-To only run the checker, use the `make check` command in the `tests/` directory:
+## File Map
 
-```console
-student@so:~/.../assignments/mini-libc/tests$ make check
-make[1]: Entering directory '...'
-rm -f *~
-[...]
-test_mmap_perm_ok                ........................ failed ...  0
-test_mmap_perm_notok             ........................ failed ...  0
-test_mmap_perm_none              ........................ failed ...  0
+- `src/include/` – Headers that mirror the public API (`stdio.h`, `string.h`, `time.h`, etc.).
+- `src/io/` – Thin syscall wrappers for file descriptors, plus `puts`.
+- `src/mm/` – The allocator and mmap helpers.
+- `src/process/` – Sleep-related functionality.
+- `tests/` – Shell scripts and small programs that validate each API.
+- `samples/` – Simple demo programs that link against `libc.a`.
 
-Total:                                                             0/100
-```
-
-Some files will fail to build, it's expected.
-This is because there are missing files or missing functions that cause build errors.
-You'll need to add those files and implement those functions for the build error to disappear.
-
-Obviously, most tests will fail, as there is no implementation.
-Some tests don't fail because the missing implementation equates to the bad behavior being tested not happening.
-
-Each test is worth a number of points.
-The total number of points is `900`.
-The maximum grade is obtained by dividing the number of points to `10`, for a maximum grade of `90`.
-
-A successful run will show the output:
-
-```console
-student@so:~/.../assignments/mini-libc/tests$ make check
-[...]
-test_strcpy                      ........................ passed ...   9
-test_strcpy_append               ........................ passed ...   9
-test_strncpy                     ........................ passed ...   9
-test_strncpy_cut                 ........................ passed ...   9
-test_strcat                      ........................ passed ...   9
-test_strcat_from_zero            ........................ passed ...   9
-test_strcat_multiple             ........................ passed ...   9
-test_strncat                     ........................ passed ...   9
-test_strncat_cut                 ........................ passed ...   9
-test_strcmp_equal                ........................ passed ...   9
-test_strcmp_same_size_less       ........................ passed ...   1
-test_strcmp_same_size_greater    ........................ passed ...   9
-test_strcmp_diff_size_less       ........................ passed ...   1
-test_strcmp_diff_size_greater    ........................ passed ...   9
-test_strncmp_equal_size_equal    ........................ passed ...   9
-test_strncmp_diff_contents_equal ........................ passed ...   9
-test_strncmp_diff_size_equal     ........................ passed ...   9
-test_strchr_exists               ........................ passed ...  11
-test_strchr_exists_twice         ........................ passed ...   9
-test_strchr_not_exists           ........................ passed ...   1
-test_strrchr_exists              ........................ passed ...  11
-test_strrchr_exists_twice        ........................ passed ...   9
-test_strrchr_not_exists          ........................ passed ...   1
-test_strstr_exists               ........................ passed ...  11
-test_strstr_exists_twice         ........................ passed ...   9
-test_strstr_not_exists           ........................ passed ...   1
-test_strrstr_exists              ........................ passed ...  11
-test_strrstr_exists_twice        ........................ passed ...   9
-test_strrstr_not_exists          ........................ passed ...   1
-test_memcpy                      ........................ passed ...  11
-test_memcpy_part                 ........................ passed ...   9
-test_memcmp_equal_size_equal     ........................ passed ...   9
-test_memcmp_diff_contents_equal  ........................ passed ...   9
-test_memcmp_diff_size_equal      ........................ passed ...   9
-test_memset                      ........................ passed ...   9
-test_memset_part                 ........................ passed ...   9
-test_memmove_apart               ........................ passed ...   9
-test_memmove_src_before_dst      ........................ passed ...   9
-test_memmove_src_after_dst       ........................ passed ...   9
-test_open_non_existent_file      ........................ passed ...   8
-test_open_invalid_access_mode    ........................ passed ...   8
-test_open_file_as_directory      ........................ passed ...   8
-test_open_directory_for_writing  ........................ passed ...   8
-test_open_force_invalid_creation ........................ passed ...   8
-test_open_close_existent_file    ........................ passed ...   8
-test_open_close_create_file      ........................ passed ...   8
-test_open_read_write_only_mode   ........................ passed ...   8
-test_open_write_read_only_mode   ........................ passed ...   8
-test_lseek_invalid_fd            ........................ passed ...   8
-test_lseek_invalid_whence        ........................ passed ...   8
-test_lseek_invalid_offset        ........................ passed ...   8
-test_lseek_set                   ........................ passed ...   8
-test_lseek_cur                   ........................ passed ...   8
-test_lseek_end                   ........................ passed ...   8
-test_lseek_combined              ........................ passed ...   8
-test_truncate_read_only_file     ........................ passed ...   8
-test_truncate_invalid_size       ........................ passed ...   8
-test_truncate_directory          ........................ passed ...   8
-test_truncate_non_existent_file  ........................ passed ...   8
-test_truncate_file               ........................ passed ...   8
-test_ftruncate_read_only_file    ........................ passed ...   8
-test_ftruncate_invalid_size      ........................ passed ...   8
-test_ftruncate_directory         ........................ passed ...   8
-test_ftruncate_bad_fd            ........................ passed ...   8
-test_ftruncate_file              ........................ passed ...   8
-test_stat_non_existent_file      ........................ passed ...   8
-test_stat_regular_file           ........................ passed ...   8
-test_fstat_bad_fd                ........................ passed ...   8
-test_fstat_regular_file          ........................ passed ...   8
-test_puts                        ........................ passed ...  15
-test_open_close_create_file      ........................ passed ...  10
-test_open_close_read_byte        ........................ passed ...  10
-test_ftruncate                   ........................ passed ...  10
-test_truncate                    ........................ passed ...  10
-test_fstat                       ........................ passed ...  10
-test_stat                        ........................ passed ...  10
-test_sleep                       ........................ passed ...  20
-test_nanosleep                   ........................ passed ...  20
-test_mmap                        ........................ passed ...   8
-test_mmap_bad_fd                 ........................ passed ...   8
-test_mmap_bad_flags              ........................ passed ...   8
-test_mremap                      ........................ passed ...   8
-test_malloc                      ........................ passed ...   8
-test_malloc_two                  ........................ passed ...   8
-test_malloc_access               ........................ passed ...   8
-test_malloc_memset               ........................ passed ...   8
-test_malloc_memcpy               ........................ passed ...   8
-test_calloc                      ........................ passed ...   8
-test_realloc                     ........................ passed ...   8
-test_realloc_access              ........................ passed ...   8
-test_realloc_memset              ........................ passed ...   8
-test_realloc_array               ........................ passed ...   8
-test_malloc                      ........................ passed ...  10
-test_multiple_malloc             ........................ passed ...  10
-test_malloc_free                 ........................ passed ...  10
-test_multiple_malloc_free        ........................ passed ...  10
-test_malloc_free_sequence        ........................ passed ...  10
-test_malloc_perm_ok              ........................ passed ...  10
-test_malloc_perm_notok           ........................ passed ...  10
-test_mmap                        ........................ passed ...  10
-test_mmap_munmap                 ........................ passed ...  10
-test_mmap_perm_ok                ........................ passed ...  10
-test_mmap_perm_notok             ........................ passed ...  10
-test_mmap_perm_none              ........................ passed ...  10
-
-Total:                                                            90/100
-```
-
-### Running the Linters
-
-To run the linters, use the `make linter` command in the `tests/` directory.
-Note that linters have to installed in your system: [`checkpatch.pl`](https://.com/torvalds/linux/blob/master/scripts/checkpatch.pl), [`cpplint`](https://github.com/cpplint/cpplint), [`shellcheck`](https://www.shellcheck.net/) with certain configuration options.
-It's easiest to run them in a Docker-based setup with everything configured:
-
-```console
-student@so:~/.../assignments/mini-libc/tests$ make lint
-[...]
-cd .. && checkpatch.pl -f checker/*.sh tests/*.sh
-[...]
-cd .. && cpplint --recursive src/ tests/ checker/
-[...]
-cd .. && shellcheck checker/*.sh tests/*.sh
-```
-
-### Behind the Scenes
-
-For a fine grained approach, build tests and ignore errors (due to missing source code and header files) by using:
-
-```console
-student@so:~/.../assignments/mini-libc/tests$ make -i
-```
-
-Then run the tests, either individually via executable files and scripts:
-
-```console
-student@so:~/.../assignments/mini-libc/tests$ ./test_lseek.sh
-test_lseek                       ........................ passed ...  10
-
-student@so:~/.../assignments/mini-libc/tests$ ./test_memory
-test_mmap                        ........................ passed ...   8
-test_mmap_bad_fd                 ........................ passed ...   8
-[...]
-```
-
-Or run them all via the `run_all_tests.sh` script:
-
-```console
-student@so:~/.../assignments/mini-libc/tests$ ./run_all_tests.sh
-test_strcpy                      ........................ passed ...   9
-test_strcpy_append               ........................ passed ...   9
-test_strncpy                     ........................ passed ...   9
-[...]
-```
-
-## Resources
-
-- [GNU libc manual](https://www.gnu.org/software/libc/manual/html_mono/libc.html)
-
-- [musl implementation of the standard C library for Linux-based systems](https://elixir.bootlin.com/musl/latest/source)
-
-- Syscall interface in Linux - [Linux man pages online](https://man7.org/linux/man-pages/index.html)
-
-- [glibc implementation of the standard C library for Linux-based systems](https://elixir.bootlin.com/glibc/latest/source)
+That's the entire scope: a compact libc subset implemented purely with Linux syscalls, ready to drop into small projects or educational experiments.
